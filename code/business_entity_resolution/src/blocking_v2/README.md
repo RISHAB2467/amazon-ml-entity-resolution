@@ -64,3 +64,18 @@ The sample is deterministic (hash of `entity_id`), so A and B get identical file
 France (test only): accents folded, SARL/SAS/SASU/EURL/SCI/SNC/Cie treated as legal forms, "rue/bd/chemin" and "de/la/du" skipped in street names, 5-digit postcodes recognised. Country is only compared for equality, so new country labels work unchanged.
 
 Block caps (in `BLOCKERS` at the top of `run_blocking.py`) drop over-generic keys. A higher cap gives more recall and more candidates. Change one cap at a time and re-measure with step 3.
+
+## Low-memory final union + optional trim (for the 148M-pair test set)
+
+`run_blocking.py` writes one `pairs_<blocker>.parquet` per blocker, then unions them. On the full test set that union can exhaust RAM. `finalize_union.py` redoes ONLY the union, in hash buckets of s1_id, from the existing pair files (no blocker is re-run):
+
+```powershell
+# 1. learn blocker weights + see recall vs top-K on the labelled train sample
+python code/business_entity_resolution/src/blocking_v2/trim_eval.py --work output/blocking_train15 --gt dataset/train/train_ground_truth.tsv --memory 4GB
+# 2a. test union, no trim
+python code/business_entity_resolution/src/blocking_v2/finalize_union.py --work output/blocking_test --memory 4GB
+# 2b. or with trim (apply the SAME K to train15 so B trains on the same distribution)
+python code/business_entity_resolution/src/blocking_v2/finalize_union.py --work output/blocking_train15 --memory 4GB --topk 50 --weights output/blocking_train15/trim_weights.json
+python code/business_entity_resolution/src/blocking_v2/finalize_union.py --work output/blocking_test --memory 4GB --topk 50 --weights output/blocking_train15/trim_weights.json
+```
+Output: `candidates/part_XX.parquet` (read as `candidates/*.parquet`) and the official `candidate_pairs.tsv` with every S1.

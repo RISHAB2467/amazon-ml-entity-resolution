@@ -42,6 +42,8 @@ BLOCKERS: dict[str, tuple[str, int]] = {
     # v3: address-rarity keys (list-valued; no house number needed)
     "apair":     ("k_apair", 30),      # any pair of the 3 rarest address words
     "nameaddr":  ("k_nameaddr", 30),   # rare name token x rare address word
+    # v4
+    "numname":   ("k_numname", 30),    # address number x rare name token
 }
 # List-valued key columns (k_compact, k_rare2, k_apair, k_nameaddr) are
 # unnested automatically: a pair is a candidate if ANY of its keys match.

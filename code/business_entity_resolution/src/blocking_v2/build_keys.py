@@ -51,6 +51,8 @@ LEGAL = {
     "opc", "pvtltd",
     # France (test-only country): SARL, SAS, SASU, EURL, SCI, SNC, "& Cie"
     "sarl", "sas", "sasu", "eurl", "sci", "snc", "selarl", "scp", "scop", "cie",
+    # appended by vendors: "golden pizza enterprises", "rev it up tavern partners"
+    "enterprises", "enterprise", "partners",
 }
 # Legal forms glued onto a compact name ("ashishserviceslimited").
 # Longest first; "co" is deliberately excluded (too many false strips).
@@ -79,7 +81,10 @@ NAME_CANON = {
 }
 # English + French function words ("et" = and, "de la" = of the)
 STOP = {"the", "and", "of", "a", "an", "et", "de", "la", "le", "les", "du",
-        "des", "d", "l", "en", "au", "aux"}
+        "des", "d", "l", "en", "au", "aux",
+        # vendor noise seen in missed pairs: "lrutility llp www lrutility com",
+        # "griffin and smith id 48453"
+        "www", "com", "net", "org", "http", "https", "id"}
 # Digit->letter look-alikes, applied only to tokens mixing letters and digits
 # ("re1iable" -> "reliable"). Pure numbers ("7 eleven") are left alone.
 LEET = str.maketrans("0134578", "oleastb")
@@ -105,7 +110,8 @@ STREET_TYPES = {"street", "st", "road", "rd", "drive", "dr", "avenue", "ave",
                 "highway", "hwy", "parkway", "pkwy", "circle", "cir", "square",
                 "sq", "terrace", "ter", "trail", "trl", "way", "ln",
                 "rue", "chemin", "allee", "impasse", "route", "quai", "cours",
-                "voie", "passage", "sentier", "rte", "che", "imp", "all"}
+                "voie", "passage", "sentier", "rte", "che", "imp", "all",
+                "saint"}
 STREET_CANON = {
     "street": "st", "road": "rd", "drive": "dr", "avenue": "ave", "av": "ave",
     "boulevard": "blvd", "lane": "ln", "court": "ct", "place": "pl",
@@ -171,7 +177,8 @@ def name_tokens(name: str) -> list[str]:
         return []
     raw = [canon_token(t) for t in fold(name).split()]
     raw = [t for t in raw if t and t not in STOP and t not in HONORIFIC
-           and t != "dba" and len(t) > 1]
+           and t != "dba" and len(t) > 1
+           and not (t.isdigit() and len(t) >= 4)]     # phone numbers, ids
     core, seen = [], set()
     for t in raw:
         u = unglue_legal(t)
@@ -232,8 +239,8 @@ def parse_address(addr: str, num_col: str):
         hn = num_col.strip().lstrip("0") or None
     if hn is None:
         for i, t in enumerate(toks):
-            if i != post_i and t.isdigit() and len(t) <= 5:
-                hn = t.lstrip("0") or None
+            if i != post_i and t.isdigit() and 1 <= len(t.lstrip("0")) <= 5:
+                hn = t.lstrip("0")
                 break
     return toks, hn, post
 
@@ -327,7 +334,7 @@ def build_keys_for_chunk(chunk: pd.DataFrame, src: int, df: Counter,
         "entity_id", "source", "country", "name_norm", "address_norm",
         "k_compact", "k_sorted", "k_pre", "k_suf", "k_phon",
         "k_rare1", "k_rare2", "k_addr", "k_addrname", "k_postname",
-        "k_postrare", "k_apair", "k_nameaddr", "hnum", "postcode")}
+        "k_postrare", "k_apair", "k_nameaddr", "k_numname", "hnum", "postcode")}
     for eid, name, addr, num, country in zip(
             chunk[COL_ID].values, chunk["_name"].values,
             chunk["_addr"].values, [""] * len(chunk),
@@ -380,6 +387,14 @@ def build_keys_for_chunk(chunk: pd.DataFrame, src: int, df: Counter,
         # and generic names ("physical therapy center") at the same place
         n3 = ranked[:3]
         k_nameaddr = sorted({f"{n}|{a}" for n in n3 for a in arank[:2]}) or None
+        # each of the first 3 address numbers x each of the 2 rarest name
+        # tokens: same number + same word even when the street/city text is
+        # misspelled ("1370 bastrop" vs "1370 bstrop") or the address is
+        # reordered; numbers anywhere, so "13 4 692" vs "5113 4 692 ... 13" works
+        nums = list(dict.fromkeys(
+            t.lstrip("0") for t in atoks
+            if t.isdigit() and t != post and 1 <= len(t.lstrip("0")) <= 5))[:3]
+        k_numname = sorted({f"{x}|{n}" for x in nums for n in ranked[:2]}) or None
 
         out["entity_id"].append(eid)
         out["source"].append(src)
@@ -399,6 +414,7 @@ def build_keys_for_chunk(chunk: pd.DataFrame, src: int, df: Counter,
         out["k_postrare"].append(k_postrare)
         out["k_apair"].append(k_apair)
         out["k_nameaddr"].append(k_nameaddr)
+        out["k_numname"].append(k_numname)
         out["hnum"].append(hn)
         out["postcode"].append(post)
     out["source"] = pa.array(out["source"], pa.int8())
@@ -425,7 +441,7 @@ def main():
     paths = {1: args.s1, 2: args.s2, 3: args.s3}
     t_all = time.time()
 
-    df_path = args.df_cache or os.path.join(args.out, "token_df_v3.pkl")
+    df_path = args.df_cache or os.path.join(args.out, "token_df_v4.pkl")
     if os.path.exists(df_path):
         print(f"Loading token DF from {df_path}")
         with open(df_path, "rb") as f:

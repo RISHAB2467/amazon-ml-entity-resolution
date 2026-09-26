@@ -1,0 +1,19 @@
+# Large competition datasets - keep local
+dataset/
+
+# Generated outputs
+output/
+*.parquet
+*.tsv
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS
+.DS_Store
+
+# Jupyter
+.ipynb_checkpoints/
